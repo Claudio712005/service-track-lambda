@@ -1,9 +1,8 @@
-package br.com.servicetrack.resource
+package br.com.servicetrack.infrastructure.adapter.resource
 
-import br.com.servicetrack.ports.IAutenticacaoResourcePort
+import br.com.servicetrack.domain.ports.`in`.IAutenticacaoResourcePort
 import jakarta.annotation.security.PermitAll
 import jakarta.enterprise.context.ApplicationScoped
-import jakarta.ws.rs.GET
 import jakarta.ws.rs.POST
 import jakarta.ws.rs.Path
 import org.eclipse.microprofile.openapi.annotations.Operation

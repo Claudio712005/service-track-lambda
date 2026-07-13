@@ -1,4 +1,4 @@
-package br.com.servicetrack.ports
+package br.com.servicetrack.domain.ports.`in`
 
 interface IAutenticacaoResourcePort {
 

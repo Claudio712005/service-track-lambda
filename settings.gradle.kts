@@ -10,4 +10,4 @@ pluginManagement {
         id(quarkusPluginId) version quarkusPluginVersion
     }
 }
-rootProject.name = "service-track-lambda"
+rootProject.name = "service-track-auth-lambda"
