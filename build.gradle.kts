@@ -3,6 +3,7 @@ import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 plugins {
     kotlin("jvm") version "2.4.0"
     kotlin("plugin.allopen") version "2.4.0"
+    kotlin("plugin.serialization") version "2.4.0"
     id("io.quarkus")
 }
 
@@ -18,14 +19,19 @@ val quarkusPlatformVersion: String by project
 dependencies {
     implementation(enforcedPlatform("${quarkusPlatformGroupId}:${quarkusPlatformArtifactId}:${quarkusPlatformVersion}"))
     implementation("io.quarkus:quarkus-kotlin")
-    implementation("io.quarkus:quarkus-hibernate-orm-panache")
+    implementation("io.quarkus:quarkus-hibernate-orm-panache-kotlin")
     implementation("io.quarkus:quarkus-jdbc-postgresql")
     implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8")
     implementation("io.quarkus:quarkus-arc")
     implementation("io.quarkus:quarkus-rest-kotlin-serialization:3.37.2")
     implementation("io.quarkus:quarkus-hibernate-validator:3.37.2")
     implementation("io.quarkus:quarkus-smallrye-openapi:3.37.2")
+    implementation("io.quarkus:quarkus-smallrye-jwt")
+    implementation("io.quarkus:quarkus-smallrye-jwt-build")
+    implementation("io.quarkus:quarkus-elytron-security-common")
+    implementation("io.quarkus:quarkus-amazon-lambda-rest")
     testImplementation("io.quarkus:quarkus-junit")
+    testImplementation("io.rest-assured:rest-assured")
 }
 
 group = "br.com.claus"

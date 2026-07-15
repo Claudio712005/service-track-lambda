@@ -1,6 +1,9 @@
 package br.com.servicetrack.domain.ports.out
 
+import br.com.servicetrack.domain.model.Usuario
+import br.com.servicetrack.domain.vo.Email
+
 interface IUsuarioRepositoryPort {
 
-    fun buscarUsuarioPorEmail(email: String): Boolean
+    fun buscarPorEmail(email: Email): Usuario?
 }
