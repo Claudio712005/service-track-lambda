@@ -1,61 +1,163 @@
 # service-track-auth-lambda
 
-This project uses Quarkus, the Supersonic Subatomic Java Framework.
+Serviço de autenticação do ServiceTrack. Valida credenciais de usuário e emite tokens JWT.
+Construído com Quarkus + Kotlin e empacotado para execução como AWS Lambda.
 
-If you want to learn more about Quarkus, please visit its website: <https://quarkus.io/>.
+## Stack
 
-## Running the application in dev mode
+- Kotlin 2.4 / JVM 21
+- Quarkus 3.37.2
+- Hibernate ORM com Panache (Kotlin)
+- PostgreSQL (JDBC)
+- SmallRye JWT (assinatura/verificação RS256 via chaves PEM)
+- AWS Lambda (quarkus-amazon-lambda-rest)
+- Gradle (wrapper)
 
-You can run your application in dev mode that enables live coding using:
+## Arquitetura
 
-```shell script
+Arquitetura hexagonal (ports & adapters):
+
+```
+src/main/kotlin/br/com/servicetrack/
+  application/          Casos de uso e DTOs de entrada/saída
+    dto/
+    service/            AutenticacaoService
+  domain/               Núcleo de negócio, sem dependências de framework
+    model/              Usuario, TokenAutenticacao
+    vo/                 Value objects: Cpf, Email, Senha, UsuarioId
+    ports/in/           Contratos de entrada (IAutenticacaoUseCase)
+    ports/out/          Contratos de saída (IUsuarioRepositoryPort, ITokenProviderPort)
+    exception/          Exceções de domínio
+    shared/enums/       Role (CLIENTE, MECANICO)
+  infrastructure/       Adaptadores concretos
+    adapter/resource/   Endpoints REST (AutenticacaoResource)
+    adapter/security/   JwtTokenProvider, BcryptVerificadorSenha
+    adapter/web/         ExceptionMappers, RequestIdFilter
+    persistence/        UsuarioEntity, UsuarioRepository
+```
+
+O `domain` não conhece Quarkus. As dependências apontam para dentro, das camadas externas
+para os ports do domínio.
+
+## Endpoints
+
+### POST /autenticacao/login
+
+Autentica um usuário e retorna um token JWT.
+
+Requisição:
+
+```json
+{
+  "email": "usuario@servicetrack.com.br",
+  "senha": "senhaForte123"
+}
+```
+
+Resposta (200):
+
+```json
+{
+  "token": "<jwt>",
+  "tipo": "Bearer",
+  "expiraEmSegundos": 3600
+}
+```
+
+Validações: `email` deve ser válido e não vazio; `senha` mínimo de 8 caracteres.
+Credenciais inválidas ou usuário inativo retornam erro de credenciais.
+
+## Chaves JWT (PEM)
+
+O serviço assina tokens com uma chave privada RSA e os verifica com a chave pública.
+
+| Arquivo | Uso | Versionado |
+|---------|-----|------------|
+| `src/main/resources/publicKey.pem` | Verificação (`mp.jwt.verify.publickey.location`) | Sim (chave pública) |
+| `src/main/resources/privateKey.pem` | Assinatura (`smallrye.jwt.sign.key.location`) | Não (gitignored) |
+
+A chave privada nunca deve ser commitada. Ela está no `.gitignore` e a pipeline de CI
+falha se qualquer chave privada for versionada. Em produção, forneça a chave privada
+via segredo/variável de ambiente no runtime da Lambda.
+
+Gerar um par RS256 para desenvolvimento local:
+
+```shell
+openssl genpkey -algorithm RSA -out src/main/resources/privateKey.pem -pkeyopt rsa_keygen_bits:2048
+openssl rsa -pubout -in src/main/resources/privateKey.pem -out src/main/resources/publicKey.pem
+```
+
+## Configuração
+
+Definida em `src/main/resources/application.properties`.
+
+| Variável | Padrão | Descrição |
+|----------|--------|-----------|
+| `POSTGRES_HOST` | `localhost` | Host do PostgreSQL |
+| `POSTGRES_PORT` | `5432` | Porta do PostgreSQL |
+| `POSTGRES_DB` | `servicetrack` | Nome do banco |
+| `POSTGRES_USER` | `postgres` | Usuário do banco |
+| `POSTGRES_PASSWORD` | `postgres` | Senha do banco |
+| `servicetrack.jwt.expiracao-segundos` | `3600` | Validade do token em segundos |
+| `mp.jwt.verify.issuer` | `https://servicetrack.com.br/auth` | Issuer esperado no JWT |
+
+O perfil `local` (`application-local.properties`) sobrescreve o nível de log e a URL do banco.
+
+## Banco de dados
+
+Schema em `src/main/resources/db/schema.sql` (tabelas `usuarios` e `usuario_roles`).
+`quarkus.hibernate-orm.schema-management.strategy=none` — o schema não é gerado pela aplicação;
+aplique o SQL manualmente ou via migração.
+
+## Execução
+
+Modo de desenvolvimento (live reload, Dev UI em <http://localhost:8080/q/dev/>):
+
+```shell
 ./gradlew quarkusDev
 ```
 
-> **_NOTE:_**  Quarkus now ships with a Dev UI, which is available in dev mode only at <http://localhost:8080/q/dev/>.
+Build e testes:
 
-## Packaging and running the application
-
-The application can be packaged using:
-
-```shell script
+```shell
 ./gradlew build
 ```
 
-It produces the `quarkus-run.jar` file in the `build/quarkus-app/` directory.
-Be aware that it’s not an _über-jar_ as the dependencies are copied into the `build/quarkus-app/lib/` directory.
+Executar o jar empacotado:
 
-The application is now runnable using `java -jar build/quarkus-app/quarkus-run.jar`.
-
-If you want to build an _über-jar_, execute the following command:
-
-```shell script
-./gradlew build -Dquarkus.package.jar.type=uber-jar
+```shell
+java -jar build/quarkus-app/quarkus-run.jar
 ```
 
-The application, packaged as an _über-jar_, is now runnable using `java -jar build/*-runner.jar`.
+Executável nativo:
 
-## Creating a native executable
-
-You can create a native executable using:
-
-```shell script
+```shell
 ./gradlew build -Dquarkus.native.enabled=true
-```
-
-Or, if you don't have GraalVM installed, you can run the native executable build in a container using:
-
-```shell script
+# Sem GraalVM local, buildar em container:
 ./gradlew build -Dquarkus.native.enabled=true -Dquarkus.native.container-build=true
 ```
 
-You can then execute your native executable with: `./build/service-track-auth-lambda-1.0-SNAPSHOT-runner`
+## Testes
 
-If you want to learn more about building native executables, please consult <https://quarkus.io/guides/gradle-tooling>.
+```shell
+./gradlew test
+```
 
-## Related Guides
+Testes de unidade usam fakes dos ports, sem necessidade de banco ou chaves PEM.
 
-- Kotlin ([guide](https://quarkus.io/guides/kotlin)): Write your services in Kotlin
-- Hibernate ORM with Panache ([guide](https://quarkus.io/guides/hibernate-orm-panache)): Simplified JPA/Hibernate data
-  access layer with active record and repository patterns
-- JDBC Driver - PostgreSQL ([guide](https://quarkus.io/guides/datasource)): Connect to the PostgreSQL database via JDBC
+## Docker / Lambda
+
+O `Dockerfile` na raiz faz build multi-stage (JDK 21) e empacota como imagem de Lambda
+(`public.ecr.aws/lambda/java:21`), usando o handler
+`io.quarkus.amazon.lambda.runtime.QuarkusStreamHandler`.
+
+```shell
+docker build -t service-track-auth-lambda .
+```
+
+## CI
+
+Pipeline em `.github/workflows/ci.yml` roda em push e pull request para `main`:
+
+- `secret-guard`: falha se alguma chave privada estiver versionada.
+- `build`: valida o Gradle wrapper, roda testes e build em JDK 21, publica relatórios de teste.
