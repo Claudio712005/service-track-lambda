@@ -3,7 +3,7 @@ package br.com.servicetrack.infrastructure.adapter.resource
 import br.com.servicetrack.application.dto.request.LoginReqDTO
 import br.com.servicetrack.application.dto.response.LoginResDTO
 import br.com.servicetrack.domain.ports.`in`.IAutenticacaoUseCase
-import br.com.servicetrack.domain.vo.Email
+import br.com.servicetrack.domain.vo.Cpf
 import br.com.servicetrack.domain.vo.Senha
 import jakarta.annotation.security.PermitAll
 import jakarta.validation.Valid
@@ -26,12 +26,11 @@ class AutenticacaoResource(
 
     @PermitAll
     @POST
-    @Path("login")
-    @Operation(summary = "Autenticar usuário", description = "Autentica um usuário e retorna um token JWT")
+    @Operation(summary = "Autenticar cliente por CPF", description = "Valida o CPF e a senha do cliente e retorna um token JWT")
     fun autenticar(@Valid requisicao: LoginReqDTO): LoginResDTO {
-        log.info("Requisição de login recebida")
+        log.info("Requisição de autenticação recebida")
         val token = autenticacaoUseCase.autenticar(
-            email = Email(requisicao.email),
+            cpf = Cpf.de(requisicao.cpf),
             senha = Senha.de(requisicao.senha)
         )
         return LoginResDTO.de(token)
