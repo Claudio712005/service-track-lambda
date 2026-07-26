@@ -47,7 +47,7 @@ class UsuarioEntity : PanacheEntityBase {
 
     fun paraDominio(): Usuario = Usuario.restaurar(
         id = UsuarioId.de(id.toString()),
-        cpf = Cpf(cpf),
+        cpf = Cpf.de(cpf),
         email = Email(email),
         senhaHash = senhaHash,
         roles = roles.toSet(),
