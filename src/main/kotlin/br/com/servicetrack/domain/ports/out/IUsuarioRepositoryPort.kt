@@ -1,9 +1,9 @@
 package br.com.servicetrack.domain.ports.out
 
 import br.com.servicetrack.domain.model.Usuario
-import br.com.servicetrack.domain.vo.Email
+import br.com.servicetrack.domain.vo.Cpf
 
 interface IUsuarioRepositoryPort {
 
-    fun buscarPorEmail(email: Email): Usuario?
+    fun buscarPorCpf(cpf: Cpf): Usuario?
 }
