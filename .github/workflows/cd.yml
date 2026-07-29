@@ -1,0 +1,153 @@
+name: CD
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'build.gradle.kts'
+      - 'settings.gradle.kts'
+      - 'gradle.properties'
+      - 'Dockerfile'
+      - '.github/workflows/cd.yml'
+  workflow_dispatch:
+    inputs:
+      env:
+        description: Ambiente alvo
+        required: true
+        type: choice
+        options: [hml, prd]
+        default: hml
+      image_tag:
+        description: Tag ja publicada a promover. Vazio constroi a partir do commit atual.
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  AWS_REGION: us-east-1
+
+jobs:
+  publicar:
+    name: Publica a imagem e atualiza a funcao
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.env || 'hml' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Definir ambiente e tag
+        id: alvo
+        run: |
+          AMBIENTE="${{ inputs.env || 'hml' }}"
+          TAG="${{ inputs.image_tag }}"
+          if [ -n "$TAG" ]; then PROMOVER=true; else TAG="${{ github.sha }}"; PROMOVER=false; fi
+          {
+            echo "ambiente=$AMBIENTE"
+            echo "tag=$TAG"
+            echo "repositorio=servicetrack-$AMBIENTE-auth-lambda"
+            echo "funcao=servicetrack-$AMBIENTE-auth"
+            echo "promover=$PROMOVER"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Configurar credenciais AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Confirmar que a infraestrutura do ambiente existe
+        run: |
+          FUNCAO="${{ steps.alvo.outputs.funcao }}"
+          if ! aws lambda get-function --function-name "$FUNCAO" >/dev/null 2>&1; then
+            echo "::error::A funcao $FUNCAO nao existe."
+            echo "::error::Aplique antes a esteira Terraform do repositorio service-track-aws-iac para ${{ steps.alvo.outputs.ambiente }}."
+            exit 1
+          fi
+
+      - name: Login no Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Setup Buildx
+        if: steps.alvo.outputs.promover == 'false'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build e push da imagem
+        if: steps.alvo.outputs.promover == 'false'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.ecr.outputs.registry }}/${{ steps.alvo.outputs.repositorio }}:${{ steps.alvo.outputs.tag }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Confirmar que a tag existe no ECR
+        run: |
+          aws ecr describe-images \
+            --repository-name "${{ steps.alvo.outputs.repositorio }}" \
+            --image-ids imageTag="${{ steps.alvo.outputs.tag }}" >/dev/null
+
+      - name: Portao de vulnerabilidade
+        run: |
+          REPO="${{ steps.alvo.outputs.repositorio }}"
+          TAG="${{ steps.alvo.outputs.tag }}"
+          STATUS=PENDING
+
+          for i in $(seq 1 30); do
+            STATUS="$(aws ecr describe-image-scan-findings \
+              --repository-name "$REPO" --image-id imageTag="$TAG" \
+              --query imageScanStatus.status --output text 2>/dev/null || echo PENDING)"
+            case "$STATUS" in
+              COMPLETE) break ;;
+              FAILED) echo "::warning::scan do ECR falhou; seguindo sem o portao"; exit 0 ;;
+              *) echo "aguardando scan do ECR... ($i/30)"; sleep 10 ;;
+            esac
+          done
+
+          if [ "$STATUS" != "COMPLETE" ]; then
+            echo "::warning::scan do ECR nao concluiu a tempo; seguindo sem o portao"
+            exit 0
+          fi
+
+          CRITICAS="$(aws ecr describe-image-scan-findings \
+            --repository-name "$REPO" --image-id imageTag="$TAG" \
+            --query 'imageScanFindings.findingSeverityCounts.CRITICAL' --output text)"
+          [ "$CRITICAS" = "None" ] && CRITICAS=0
+
+          echo "vulnerabilidades criticas: $CRITICAS"
+          if [ "$CRITICAS" -gt 0 ]; then
+            echo "::error::imagem com $CRITICAS vulnerabilidade(s) CRITICAL; deploy interrompido"
+            exit 1
+          fi
+
+      - name: Atualizar o codigo da funcao
+        run: |
+          FUNCAO="${{ steps.alvo.outputs.funcao }}"
+          IMAGEM="${{ steps.ecr.outputs.registry }}/${{ steps.alvo.outputs.repositorio }}:${{ steps.alvo.outputs.tag }}"
+
+          aws lambda update-function-code \
+            --function-name "$FUNCAO" \
+            --image-uri "$IMAGEM" \
+            --publish >/dev/null
+
+          aws lambda wait function-updated --function-name "$FUNCAO"
+          echo "funcao $FUNCAO atualizada para $IMAGEM"
+
+      - name: Resumo
+        run: |
+          {
+            echo "### Funcao de autenticacao atualizada"
+            echo
+            echo "- ambiente: \`${{ steps.alvo.outputs.ambiente }}\`"
+            echo "- funcao: \`${{ steps.alvo.outputs.funcao }}\`"
+            echo "- repositorio ECR: \`${{ steps.alvo.outputs.repositorio }}\`"
+            echo "- tag: \`${{ steps.alvo.outputs.tag }}\`"
+            echo
+            echo "O Terraform ignora o image_uri da funcao, entao este deploy nao exige apply."
+          } >> "$GITHUB_STEP_SUMMARY"

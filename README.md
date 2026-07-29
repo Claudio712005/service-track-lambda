@@ -77,8 +77,12 @@ O serviço assina tokens com uma chave privada RSA e os verifica com a chave pú
 | `src/main/resources/privateKey.pem` | Assinatura (`smallrye.jwt.sign.key.location`) | Não (gitignored) |
 
 A chave privada nunca deve ser commitada. Ela está no `.gitignore` e a pipeline de CI
-falha se qualquer chave privada for versionada. Em produção, forneça a chave privada
-via segredo/variável de ambiente no runtime da Lambda.
+falha se qualquer chave privada for versionada.
+
+**Em `hml` e `prd` o par não é gerado à mão.** O Terraform do
+[service-track-aws-iac](https://github.com/Claudio712005/service-track-aws-iac) cria um par por
+ambiente e o entrega a esta função e à aplicação no mesmo apply, por variável de ambiente
+(`MP_JWT_VERIFY_PUBLICKEY`, `SMALLRYE_JWT_SIGN_KEY`). Ver `IAC-ADR-018`.
 
 Gerar um par RS256 para desenvolvimento local:
 
@@ -86,6 +90,39 @@ Gerar um par RS256 para desenvolvimento local:
 openssl genpkey -algorithm RSA -out src/main/resources/privateKey.pem -pkeyopt rsa_keygen_bits:2048
 openssl rsa -pubout -in src/main/resources/privateKey.pem -out src/main/resources/publicKey.pem
 ```
+
+## CI/CD
+
+| Esteira | Dispara em | O que faz |
+|---|---|---|
+| **CI** | push e PR | `secret-guard` falha se houver chave privada versionada; `build` valida o wrapper do Gradle, roda os testes em JDK 21 e publica os relatórios |
+| **CD** | push na `main`, ou Run workflow | publica a imagem e atualiza a função |
+
+O CD constrói a imagem, publica em `servicetrack-<env>-auth-lambda`, aplica o portão de
+vulnerabilidade e chama `aws lambda update-function-code` em `servicetrack-<env>-auth`.
+
+Push na `main` entrega em `hml`. Promoção para `prd` é manual, e informando `image_tag`
+promove uma imagem já publicada sem reconstruir.
+
+Os nomes do repositório e da função são **derivados do ambiente**, não recebidos de fora: o
+padrão é `servicetrack-<env>-*`. Por isso nenhum repositório precisa escrever variável neste.
+
+A esteira confere que a função existe antes de construir, e para com mensagem explícita se a
+infraestrutura do ambiente ainda não foi aplicada.
+
+> O Terraform gerencia a infraestrutura da função, não o código
+> (`lifecycle { ignore_changes = [image_uri] }`). Por isso o deploy não exige `terraform apply`
+> — importante numa conta cujo login expira a cada laboratório.
+
+### Secrets necessárias
+
+| Secret | Onde |
+|---|---|
+| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN` | Environments `hml` e `prd` deste repositório |
+
+Renovadas a cada laboratório da AWS Academy.
+
+---
 
 ## Configuração
 
@@ -155,9 +192,4 @@ O `Dockerfile` na raiz faz build multi-stage (JDK 21) e empacota como imagem de 
 docker build -t service-track-auth-lambda .
 ```
 
-## CI
 
-Pipeline em `.github/workflows/ci.yml` roda em push e pull request para `main`:
-
-- `secret-guard`: falha se alguma chave privada estiver versionada.
-- `build`: valida o Gradle wrapper, roda testes e build em JDK 21, publica relatórios de teste.
