@@ -41,15 +41,15 @@ para os ports do domínio.
 
 ## Endpoints
 
-### POST /autenticacao/login
+### POST /autenticacao
 
-Autentica um usuário e retorna um token JWT.
+Autentica um usuário por **CPF** e retorna um token JWT.
 
 Requisição:
 
 ```json
 {
-  "email": "usuario@servicetrack.com.br",
+  "cpf": "12345678901",
   "senha": "senhaForte123"
 }
 ```
@@ -64,8 +64,14 @@ Resposta (200):
 }
 ```
 
-Validações: `email` deve ser válido e não vazio; `senha` mínimo de 8 caracteres.
-Credenciais inválidas ou usuário inativo retornam erro de credenciais.
+Validações: `cpf` com 11 dígitos, com ou sem pontuação (`123.456.789-01` também é aceito);
+`senha` com mínimo de 8 caracteres. Credenciais inválidas ou usuário inativo retornam erro de
+credenciais.
+
+> O path é `/autenticacao`, sem sufixo. É o mesmo que o contrato do API Gateway expõe em
+> `apis/service-track-api-ext/openApi.yaml` no repositório `service-track-aws-iac`. Os dois
+> precisam mudar juntos: divergência aqui quebra em runtime e nenhum teste de contrato atual
+> detecta.
 
 ## Chaves JWT (PEM)
 
