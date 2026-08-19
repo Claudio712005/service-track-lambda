@@ -17,7 +17,14 @@ RUN --mount=type=cache,target=/root/.gradle \
 
 FROM eclipse-temurin:21-jre-jammy AS runtime
 
+ARG DD_TRACE_VERSION=1.65.1
+
+ENV DD_TRACE_ENABLED=false
+
 WORKDIR /deployments
+
+ADD https://repo1.maven.org/maven2/com/datadoghq/dd-java-agent/${DD_TRACE_VERSION}/dd-java-agent-${DD_TRACE_VERSION}.jar \
+    /deployments/dd-java-agent.jar
 
 COPY --from=build /workspace/build/quarkus-app/lib/     ./lib/
 COPY --from=build /workspace/build/quarkus-app/*.jar    ./
@@ -26,4 +33,4 @@ COPY --from=build /workspace/build/quarkus-app/quarkus/ ./quarkus/
 
 EXPOSE 8080
 
-ENTRYPOINT ["java", "-Dquarkus.http.host=0.0.0.0", "-jar", "/deployments/quarkus-run.jar"]
+ENTRYPOINT ["java", "-javaagent:/deployments/dd-java-agent.jar", "-Dquarkus.http.host=0.0.0.0", "-jar", "/deployments/quarkus-run.jar"]
