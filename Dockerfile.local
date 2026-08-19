@@ -1,0 +1,29 @@
+FROM eclipse-temurin:21-jdk-jammy AS build
+
+WORKDIR /workspace
+
+COPY gradlew settings.gradle.kts build.gradle.kts gradle.properties ./
+COPY gradle ./gradle
+RUN chmod +x gradlew
+
+RUN --mount=type=cache,target=/root/.gradle \
+    ./gradlew --no-daemon dependencies > /dev/null 2>&1 || true
+
+COPY src ./src
+
+RUN --mount=type=cache,target=/root/.gradle \
+    ./gradlew --no-daemon clean build -x test -PexecucaoLocal=true
+
+
+FROM eclipse-temurin:21-jre-jammy AS runtime
+
+WORKDIR /deployments
+
+COPY --from=build /workspace/build/quarkus-app/lib/     ./lib/
+COPY --from=build /workspace/build/quarkus-app/*.jar    ./
+COPY --from=build /workspace/build/quarkus-app/app/     ./app/
+COPY --from=build /workspace/build/quarkus-app/quarkus/ ./quarkus/
+
+EXPOSE 8080
+
+ENTRYPOINT ["java", "-Dquarkus.http.host=0.0.0.0", "-jar", "/deployments/quarkus-run.jar"]
