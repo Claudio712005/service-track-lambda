@@ -16,6 +16,8 @@ val quarkusPlatformGroupId: String by project
 val quarkusPlatformArtifactId: String by project
 val quarkusPlatformVersion: String by project
 
+val execucaoLocal = providers.gradleProperty("execucaoLocal").orNull == "true"
+
 dependencies {
     implementation(enforcedPlatform("${quarkusPlatformGroupId}:${quarkusPlatformArtifactId}:${quarkusPlatformVersion}"))
     implementation("io.quarkus:quarkus-kotlin")
@@ -29,7 +31,9 @@ dependencies {
     implementation("io.quarkus:quarkus-smallrye-jwt")
     implementation("io.quarkus:quarkus-smallrye-jwt-build")
     implementation("io.quarkus:quarkus-elytron-security-common")
-    implementation("io.quarkus:quarkus-amazon-lambda-rest")
+    if (!execucaoLocal) {
+        implementation("io.quarkus:quarkus-amazon-lambda-rest")
+    }
     testImplementation("io.quarkus:quarkus-junit")
     testImplementation("io.rest-assured:rest-assured")
 }
