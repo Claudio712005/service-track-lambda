@@ -90,7 +90,22 @@ falha se qualquer chave privada for versionada.
 ambiente e o entrega a esta função e à aplicação no mesmo apply, por variável de ambiente
 (`MP_JWT_VERIFY_PUBLICKEY`, `SMALLRYE_JWT_SIGN_KEY`). Ver `IAC-ADR-018`.
 
-Gerar um par RS256 para desenvolvimento local:
+**Localmente o par tem que ser o mesmo da aplicação.** Ela verifica o token emitido aqui e
+também assina com essa chave privada, nos tokens de decisão de orçamento. Dois pares
+diferentes fazem todo login local terminar em 401 na aplicação — na nuvem o sintoma não
+aparece, porque as duas pontas recebem a chave por variável de ambiente e o classpath é
+ignorado.
+
+O par versionado aqui é o mesmo de
+`service-track-api/software/service-track-api/_infrastructure/src/main/resources/keys/`.
+Para trabalhar local, copie a chave privada de lá:
+
+```shell
+cp ../../service-track-api/software/service-track-api/_infrastructure/src/main/resources/keys/privateKey.pem \
+   src/main/resources/privateKey.pem
+```
+
+Gerar um par novo só faz sentido trocando os dois repositórios ao mesmo tempo:
 
 ```shell
 openssl genpkey -algorithm RSA -out src/main/resources/privateKey.pem -pkeyopt rsa_keygen_bits:2048
@@ -166,11 +181,27 @@ Build e testes:
 ./gradlew build
 ```
 
-Executar o jar empacotado:
+### Execução local fora da AWS
+
+O build padrão empacota a função com `quarkus-amazon-lambda-rest`, que substitui **em tempo
+de build** o servidor HTTP por um despachante acionado pelo runtime da AWS. Rodar esse
+artefato numa máquina sobe a aplicação e não abre porta nenhuma.
+
+Para rodar como serviço HTTP comum — em compose, ou direto na máquina — existe a variante
+`execucaoLocal`, que apenas deixa a extensão de fora. O restante é o mesmo código, os mesmos
+recursos JAX-RS e os mesmos testes:
 
 ```shell
+./gradlew build -x test -PexecucaoLocal=true
 java -jar build/quarkus-app/quarkus-run.jar
 ```
+
+```
+Installed features: [agroal, cdi, ..., rest, security, smallrye-jwt, vertx]
+Listening on: http://0.0.0.0:8080
+```
+
+O que vai para a AWS continua sendo o build sem a propriedade. Decisão em `GLOBAL-RFC-007`.
 
 Executável nativo:
 
@@ -197,5 +228,17 @@ O `Dockerfile` na raiz faz build multi-stage (JDK 21) e empacota como imagem de 
 ```shell
 docker build -t service-track-auth-lambda .
 ```
+
+### Imagem para o compose local
+
+O `Dockerfile.local` constrói a variante HTTP e entrega um runtime JVM comum. É a imagem que
+o `docker-compose.yaml` de `service-track-api` consome como serviço `auth`:
+
+```shell
+docker build -f Dockerfile.local -t servicetrack-auth:local .
+```
+
+Não exige JDK na máquina — o build acontece dentro da imagem. Refazer sempre que o código de
+autenticação mudar.
 
 
