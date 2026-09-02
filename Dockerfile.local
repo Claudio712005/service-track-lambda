@@ -23,13 +23,18 @@ ENV DD_TRACE_ENABLED=false
 
 WORKDIR /deployments
 
-ADD https://repo1.maven.org/maven2/com/datadoghq/dd-java-agent/${DD_TRACE_VERSION}/dd-java-agent-${DD_TRACE_VERSION}.jar \
+RUN addgroup -S servicetrack && adduser -S servicetrack -G servicetrack
+
+ADD --chown=servicetrack:servicetrack --chmod=644 \
+    https://repo1.maven.org/maven2/com/datadoghq/dd-java-agent/${DD_TRACE_VERSION}/dd-java-agent-${DD_TRACE_VERSION}.jar \
     /deployments/dd-java-agent.jar
 
-COPY --from=build /workspace/build/quarkus-app/lib/     ./lib/
-COPY --from=build /workspace/build/quarkus-app/*.jar    ./
-COPY --from=build /workspace/build/quarkus-app/app/     ./app/
-COPY --from=build /workspace/build/quarkus-app/quarkus/ ./quarkus/
+COPY --from=build --chown=servicetrack:servicetrack /workspace/build/quarkus-app/lib/     ./lib/
+COPY --from=build --chown=servicetrack:servicetrack /workspace/build/quarkus-app/*.jar    ./
+COPY --from=build --chown=servicetrack:servicetrack /workspace/build/quarkus-app/app/     ./app/
+COPY --from=build --chown=servicetrack:servicetrack /workspace/build/quarkus-app/quarkus/ ./quarkus/
+
+USER servicetrack
 
 EXPOSE 8080
 
