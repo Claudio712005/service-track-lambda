@@ -15,7 +15,7 @@ RUN --mount=type=cache,target=/root/.gradle \
     ./gradlew --no-daemon clean build -x test -PexecucaoLocal=true
 
 
-FROM eclipse-temurin:21-jre-jammy AS runtime
+FROM eclipse-temurin:21-jre-alpine AS runtime
 
 ARG DD_TRACE_VERSION=1.65.1
 
