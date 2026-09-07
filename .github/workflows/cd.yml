@@ -109,6 +109,8 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: ${{ steps.ecr.outputs.registry }}/${{ needs.preparar.outputs.repositorio }}:${{ needs.preparar.outputs.tag }}
+          provenance: false
+          sbom: false
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
