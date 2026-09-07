@@ -1,5 +1,7 @@
 name: CD
 
+run-name: "CD auth -> ${{ inputs.env || 'hml' }} por @${{ github.actor }}"
+
 on:
   push:
     branches: [main]
@@ -34,13 +36,17 @@ env:
   AWS_REGION: us-east-1
 
 jobs:
-  publicar:
-    name: Publica a imagem e atualiza a funcao
+  preparar:
+    name: "1. Preparar"
     runs-on: ubuntu-latest
     environment: ${{ inputs.env || 'hml' }}
+    outputs:
+      ambiente: ${{ steps.alvo.outputs.ambiente }}
+      tag: ${{ steps.alvo.outputs.tag }}
+      repositorio: ${{ steps.alvo.outputs.repositorio }}
+      funcao: ${{ steps.alvo.outputs.funcao }}
+      promover: ${{ steps.alvo.outputs.promover }}
     steps:
-      - uses: actions/checkout@v4
-
       - name: Definir ambiente e tag
         id: alvo
         run: |
@@ -72,37 +78,66 @@ jobs:
             exit 1
           fi
 
+  construir:
+    name: "2. Construir a imagem"
+    needs: preparar
+    if: needs.preparar.outputs.promover == 'false'
+    runs-on: ubuntu-latest
+    environment: ${{ needs.preparar.outputs.ambiente }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configurar credenciais AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.AWS_REGION }}
+
       - name: Login no Amazon ECR
         id: ecr
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Setup Buildx
-        if: steps.alvo.outputs.promover == 'false'
         uses: docker/setup-buildx-action@v3
 
       - name: Build e push da imagem
-        if: steps.alvo.outputs.promover == 'false'
         uses: docker/build-push-action@v6
         with:
           context: .
           platforms: linux/amd64
           push: true
-          tags: ${{ steps.ecr.outputs.registry }}/${{ steps.alvo.outputs.repositorio }}:${{ steps.alvo.outputs.tag }}
+          tags: ${{ steps.ecr.outputs.registry }}/${{ needs.preparar.outputs.repositorio }}:${{ needs.preparar.outputs.tag }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  verificar:
+    name: "3. Verificar a imagem"
+    needs: [preparar, construir]
+    if: always() && needs.preparar.result == 'success' && needs.construir.result != 'failure'
+    runs-on: ubuntu-latest
+    environment: ${{ needs.preparar.outputs.ambiente }}
+    env:
+      REPO: ${{ needs.preparar.outputs.repositorio }}
+      TAG: ${{ needs.preparar.outputs.tag }}
+    steps:
+      - name: Configurar credenciais AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.AWS_REGION }}
 
       - name: Confirmar que a tag existe no ECR
         run: |
           aws ecr describe-images \
-            --repository-name "${{ steps.alvo.outputs.repositorio }}" \
-            --image-ids imageTag="${{ steps.alvo.outputs.tag }}" >/dev/null
+            --repository-name "$REPO" --image-ids imageTag="$TAG" >/dev/null
 
       - name: Portao de vulnerabilidade
         run: |
-          REPO="${{ steps.alvo.outputs.repositorio }}"
-          TAG="${{ steps.alvo.outputs.tag }}"
           STATUS=PENDING
-
           for i in $(seq 1 30); do
             STATUS="$(aws ecr describe-image-scan-findings \
               --repository-name "$REPO" --image-id imageTag="$TAG" \
@@ -130,28 +165,62 @@ jobs:
             exit 1
           fi
 
+  entregar:
+    name: "4. Atualizar a funcao"
+    needs: [preparar, verificar]
+    runs-on: ubuntu-latest
+    environment: ${{ needs.preparar.outputs.ambiente }}
+    env:
+      FUNCAO: ${{ needs.preparar.outputs.funcao }}
+      REPO: ${{ needs.preparar.outputs.repositorio }}
+      TAG: ${{ needs.preparar.outputs.tag }}
+    steps:
+      - name: Configurar credenciais AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login no Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
       - name: Atualizar o codigo da funcao
         run: |
-          FUNCAO="${{ steps.alvo.outputs.funcao }}"
-          IMAGEM="${{ steps.ecr.outputs.registry }}/${{ steps.alvo.outputs.repositorio }}:${{ steps.alvo.outputs.tag }}"
-
+          IMAGEM="${{ steps.ecr.outputs.registry }}/$REPO:$TAG"
           aws lambda update-function-code \
             --function-name "$FUNCAO" \
             --image-uri "$IMAGEM" \
             --publish >/dev/null
-
           aws lambda wait function-updated --function-name "$FUNCAO"
           echo "funcao $FUNCAO atualizada para $IMAGEM"
 
+      - name: Confirmar que a funcao esta saudavel
+        run: |
+          ESTADO="$(aws lambda get-function-configuration \
+            --function-name "$FUNCAO" --query 'State' --output text)"
+          ULTIMO="$(aws lambda get-function-configuration \
+            --function-name "$FUNCAO" --query 'LastUpdateStatus' --output text)"
+          echo "State=$ESTADO LastUpdateStatus=$ULTIMO"
+          if [ "$ESTADO" != "Active" ] || [ "$ULTIMO" != "Successful" ]; then
+            echo "::error::A funcao nao ficou saudavel apos a atualizacao."
+            aws lambda get-function-configuration --function-name "$FUNCAO" \
+              --query '{State:State,Reason:StateReason,Update:LastUpdateStatusReason}' --output table || true
+            exit 1
+          fi
+
       - name: Resumo
+        if: always()
         run: |
           {
-            echo "### Funcao de autenticacao atualizada"
-            echo
-            echo "- ambiente: \`${{ steps.alvo.outputs.ambiente }}\`"
-            echo "- funcao: \`${{ steps.alvo.outputs.funcao }}\`"
-            echo "- repositorio ECR: \`${{ steps.alvo.outputs.repositorio }}\`"
-            echo "- tag: \`${{ steps.alvo.outputs.tag }}\`"
-            echo
-            echo "O Terraform ignora o image_uri da funcao, entao este deploy nao exige apply."
+            echo "### Funcao de autenticacao — ${{ needs.preparar.outputs.ambiente }}"
+            echo ""
+            echo "| Campo | Valor |"
+            echo "|---|---|"
+            echo "| Funcao | \`$FUNCAO\` |"
+            echo "| Repositorio ECR | \`$REPO\` |"
+            echo "| Tag | \`$TAG\` |"
+            echo "| Resultado | ${{ job.status }} |"
           } >> "$GITHUB_STEP_SUMMARY"
