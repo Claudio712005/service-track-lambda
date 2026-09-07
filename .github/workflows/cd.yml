@@ -26,6 +26,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: cd-lambda-${{ inputs.env || 'hml' }}
+  cancel-in-progress: false
+
 env:
   AWS_REGION: us-east-1
 
