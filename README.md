@@ -1,6 +1,6 @@
 # service-track-auth-lambda
-
-Serviço de autenticação do ServiceTrack. Valida credenciais de usuário e emite tokens JWT.
+ 
+Serviço de autenticação do ServiceTrack. Valida credenciais de usuário e emite tokens JWT. 
 Construído com Quarkus + Kotlin e empacotado para execução como AWS Lambda.
 
 ## Stack
