@@ -23,17 +23,16 @@ src/main/kotlin/br/com/servicetrack/
     dto/
     service/            AutenticacaoService
   domain/               Núcleo de negócio, sem dependências de framework
-    model/              Usuario, TokenAutenticacao
-    vo/                 Value objects: Cpf, Email, Senha, UsuarioId
+    model/              IdentidadeAutenticada, TokenAutenticacao
+    vo/                 Value objects: Cpf, Senha, UsuarioId
     ports/in/           Contratos de entrada (IAutenticacaoUseCase)
-    ports/out/          Contratos de saída (IUsuarioRepositoryPort, ITokenProviderPort)
+    ports/out/          Contratos de saída (IVerificadorDeCredencialPort, ITokenProviderPort)
     exception/          Exceções de domínio
-    shared/enums/       Role (CLIENTE, MECANICO)
   infrastructure/       Adaptadores concretos
     adapter/resource/   Endpoints REST (AutenticacaoResource)
-    adapter/security/   JwtTokenProvider, BcryptVerificadorSenha
-    adapter/web/         ExceptionMappers, RequestIdFilter
-    persistence/        UsuarioEntity, UsuarioRepository
+    adapter/security/   JwtTokenProvider
+    adapter/usuarios/   Cliente REST do serviço de usuários
+    adapter/web/        ExceptionMappers, RequestIdFilter
 ```
 
 O `domain` não conhece Quarkus. As dependências apontam para dentro, das camadas externas
@@ -151,21 +150,50 @@ Definida em `src/main/resources/application.properties`.
 
 | Variável | Padrão | Descrição |
 |----------|--------|-----------|
-| `POSTGRES_HOST` | `localhost` | Host do PostgreSQL |
-| `POSTGRES_PORT` | `5432` | Porta do PostgreSQL |
-| `POSTGRES_DB` | `servicetrack` | Nome do banco |
-| `POSTGRES_USER` | `postgres` | Usuário do banco |
-| `POSTGRES_PASSWORD` | `postgres` | Senha do banco |
+| `ST_USU_BASE_URL` | `http://localhost:8080` | Base do serviço de usuários. Em AWS, a URL da API Gateway privada, lida de `/servicetrack/<env>/api-interna/base-url` no SSM |
 | `servicetrack.jwt.expiracao-segundos` | `3600` | Validade do token em segundos |
-| `mp.jwt.verify.issuer` | `https://servicetrack.com.br/auth` | Issuer esperado no JWT |
+| `mp.jwt.verify.issuer` | `service-track-api` | Issuer do JWT. Identificador do sistema, não nome de repositório |
 
-O perfil `local` (`application-local.properties`) sobrescreve o nível de log e a URL do banco.
+Timeouts da chamada ao serviço de usuários: **1s para conectar, 2s para ler**. São agressivos de
+propósito — a função é faturada por duração e o API Gateway corta em 29s, então esperar não é
+gratuito.
 
-## Banco de dados
+O perfil `local` (`application-local.properties`) sobrescreve apenas o nível de log.
 
-Schema em `src/main/resources/db/schema.sql` (tabelas `usuarios` e `usuario_roles`).
-`quarkus.hibernate-orm.schema-management.strategy=none` — o schema não é gerado pela aplicação;
-aplique o SQL manualmente ou via migração.
+## Esta função não tem banco de dados
+
+Ela **não lê tabela nenhuma**. Para conferir uma credencial, chama
+`POST /credenciais/verificacao` no `service-track-usuarios-veiculos`, que compara o hash e
+devolve a identidade confirmada com os papéis que entram no token.
+
+Isso fecha a dívida `A-06`: antes existiam duas definições do mesmo schema, uma aqui e outra nas
+migrations do monólito, sem dono único. Agora o dono do dado de usuário é um só, e esta função
+não carrega credencial de banco.
+
+**Ela continua dentro da VPC**, porque a API que ela chama é privada e só resolve lá dentro. O
+que saiu foi a credencial, não o requisito de rede.
+
+### Por que não há circuit breaker
+
+O estado de um disjuntor vive em memória e morre com o contêiner da função. Com concorrência N,
+são N disjuntores independentes, cada um precisando atingir o próprio limiar antes de abrir — o
+ganho de "parar de insistir" fica dividido por N.
+
+E não há resposta degradada possível: se o serviço de usuários está fora, autenticação não
+acontece. O disjuntor trocaria "esperar e falhar" por "falhar rápido", que é exatamente o que o
+timeout já faz, de forma determinística e sem estado.
+
+Retentativa também não: o endpoint tem limite de requisições e devolve `429`, e insistir piora.
+`401` nunca se retenta.
+
+Tratamento por status:
+
+| Resposta do serviço de usuários | O que a função devolve |
+|---|---|
+| `200` | token |
+| `401`, `404` | `401`, credenciais inválidas |
+| `429` | `503` |
+| `5xx`, timeout, falha de conexão | `503` |
 
 ## Execução
 
