@@ -2,6 +2,7 @@ package br.com.servicetrack.infrastructure.adapter.web
 
 import br.com.servicetrack.application.dto.response.ErroResDTO
 import br.com.servicetrack.domain.exception.CredenciaisInvalidasException
+import br.com.servicetrack.domain.exception.ServicoDeUsuariosIndisponivelException
 import br.com.servicetrack.domain.exception.DomainException
 import jakarta.ws.rs.core.Response
 import jakarta.ws.rs.ext.ExceptionMapper
@@ -33,5 +34,16 @@ class DomainExceptionMapper : ExceptionMapper<DomainException> {
     override fun toResponse(exception: DomainException): Response {
         log.warnf("Requisição inválida: %s", exception.message)
         return erro(Response.Status.BAD_REQUEST, exception.message ?: "Requisição inválida")
+    }
+}
+
+@Provider
+class ServicoDeUsuariosIndisponivelMapper : ExceptionMapper<ServicoDeUsuariosIndisponivelException> {
+
+    private val log = Logger.getLogger(ServicoDeUsuariosIndisponivelMapper::class.java)
+
+    override fun toResponse(exception: ServicoDeUsuariosIndisponivelException): Response {
+        log.errorf(exception, "Autenticacao indisponivel: %s", exception.message)
+        return erro(Response.Status.SERVICE_UNAVAILABLE, exception.message ?: "Servico indisponivel")
     }
 }

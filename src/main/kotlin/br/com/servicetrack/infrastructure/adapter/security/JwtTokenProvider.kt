@@ -1,7 +1,7 @@
 package br.com.servicetrack.infrastructure.adapter.security
 
 import br.com.servicetrack.domain.model.TokenAutenticacao
-import br.com.servicetrack.domain.model.Usuario
+import br.com.servicetrack.domain.model.IdentidadeAutenticada
 import br.com.servicetrack.domain.ports.out.ITokenProviderPort
 import io.smallrye.jwt.build.Jwt
 import jakarta.enterprise.context.ApplicationScoped
@@ -19,16 +19,16 @@ class JwtTokenProvider(
 
     private val log = Logger.getLogger(JwtTokenProvider::class.java)
 
-    override fun gerar(usuario: Usuario): TokenAutenticacao {
+    override fun gerar(identidade: IdentidadeAutenticada): TokenAutenticacao {
         val token = Jwt.issuer(issuer)
-            .subject(usuario.id.valor)
-            .upn(usuario.email.valor)
-            .groups(usuario.roles.map { it.name }.toSet())
-            .claim("cpf", usuario.cpf.valor)
+            .subject(identidade.id.valor)
+            .upn(identidade.documento.valor)
+            .groups(identidade.roles)
+            .claim("cpf", identidade.documento.valor)
             .expiresIn(Duration.ofSeconds(expiracaoSegundos))
             .sign()
 
-        log.debugf("JWT emitido para usuarioId=%s (expira em %ds)", usuario.id.valor, expiracaoSegundos)
+        log.debugf("JWT emitido para usuarioId=%s (expira em %ds)", identidade.id.valor, expiracaoSegundos)
         return TokenAutenticacao(token = token, expiraEmSegundos = expiracaoSegundos)
     }
 }

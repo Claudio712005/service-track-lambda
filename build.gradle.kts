@@ -21,16 +21,14 @@ val execucaoLocal = providers.gradleProperty("execucaoLocal").orNull == "true"
 dependencies {
     implementation(enforcedPlatform("${quarkusPlatformGroupId}:${quarkusPlatformArtifactId}:${quarkusPlatformVersion}"))
     implementation("io.quarkus:quarkus-kotlin")
-    implementation("io.quarkus:quarkus-hibernate-orm-panache-kotlin")
-    implementation("io.quarkus:quarkus-jdbc-postgresql")
     implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8")
     implementation("io.quarkus:quarkus-arc")
     implementation("io.quarkus:quarkus-rest-kotlin-serialization:3.37.2")
+    implementation("io.quarkus:quarkus-rest-client-kotlin-serialization:3.37.2")
     implementation("io.quarkus:quarkus-hibernate-validator:3.37.2")
     implementation("io.quarkus:quarkus-smallrye-openapi:3.37.2")
     implementation("io.quarkus:quarkus-smallrye-jwt")
     implementation("io.quarkus:quarkus-smallrye-jwt-build")
-    implementation("io.quarkus:quarkus-elytron-security-common")
     if (!execucaoLocal) {
         implementation("io.quarkus:quarkus-amazon-lambda-rest")
     }
