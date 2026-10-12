@@ -150,7 +150,7 @@ Definida em `src/main/resources/application.properties`.
 
 | Variável | Padrão | Descrição |
 |----------|--------|-----------|
-| `ST_USU_BASE_URL` | `http://localhost:8080` | Base do serviço de usuários. Em AWS, a URL da API Gateway privada, lida de `/servicetrack/<env>/api-interna/base-url` no SSM |
+| `ST_USU_BASE_URL` | `http://localhost:8080` | Base do serviço de usuários. Em AWS, **injetada pelo stack** com o DNS do NLB interno e a porta 30081 (`IAC-ADR-035`) |
 | `servicetrack.jwt.expiracao-segundos` | `3600` | Validade do token em segundos |
 | `mp.jwt.verify.issuer` | `service-track-api` | Issuer do JWT. Identificador do sistema, não nome de repositório |
 
@@ -165,6 +165,23 @@ O perfil `local` (`application-local.properties`) sobrescreve apenas o nível de
 Ela **não lê tabela nenhuma**. Para conferir uma credencial, chama
 `POST /credenciais/verificacao` no `service-track-usuarios-veiculos`, que compara o hash e
 devolve a identidade confirmada com os papéis que entram no token.
+
+### Como esta função alcança o serviço de usuários
+
+**Pelo NLB interno, não por gateway.** A função roda **na VPC**, não no cluster, então não resolve
+DNS de `ClusterIP` — o caminho que o BFF usa para chamar os microsserviços não serve aqui.
+
+```
+Lambda (subnets privadas) → NLB interno:30081 → NodePort → pod do usuarios-veiculos
+```
+
+A `IAC-ADR-035` removeu a API Gateway privada, que era o caminho que este README descrevia antes.
+Sobrou o NLB direto, e `ST_USU_BASE_URL` passou a ser **injetada pelo stack** em vez de depender de
+alguém preencher `lambda_extra_env` à mão — ela **nunca esteve definida**, e a função caía no
+default `http://localhost:8080`.
+
+Isso implica uma dependência de flag: `habilitar_autenticacao = true` **exige**
+`habilitar_entrada_do_bff = true`, porque sem NLB não há caminho.
 
 Isso fecha a dívida `A-06`: antes existiam duas definições do mesmo schema, uma aqui e outra nas
 migrations do monólito, sem dono único. Agora o dono do dado de usuário é um só, e esta função
