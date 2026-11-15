@@ -115,7 +115,7 @@ openssl rsa -pubout -in src/main/resources/privateKey.pem -out src/main/resource
 
 | Esteira | Dispara em | O que faz |
 |---|---|---|
-| **CI** | push e PR | `secret-guard` falha se houver chave privada versionada; `build` valida o wrapper do Gradle, roda os testes em JDK 21 e publica os relatórios |
+| **CI** | push e PR | `secret-guard` falha se houver chave privada versionada; `build` valida o wrapper do Gradle, roda os testes em JDK 21, aplica o portão de cobertura e publica os relatórios; `sonar` envia análise e cobertura ao SonarCloud |
 | **CD** | push na `main`, ou Run workflow | publica a imagem e atualiza a função |
 
 O CD constrói a imagem, publica em `servicetrack-<env>-auth-lambda`, aplica o portão de
@@ -262,7 +262,25 @@ Executável nativo:
 ./gradlew test
 ```
 
-Testes de unidade usam fakes dos ports, sem necessidade de banco ou chaves PEM.
+Testes de unidade usam fakes dos ports, sem necessidade de banco ou chaves PEM. O teste do
+emissor de JWT gera um par RS256 em memória e confere a assinatura com a chave pública.
+
+## Cobertura
+
+Portão em linha 80%, instrução 80%, ramo 60%. Medido em 15/11/2026, com 52 testes:
+
+| Métrica | Atual | Mínimo |
+|---|---|---|
+| Linha | 100% | 80% |
+| Instrução | 93,4% | 80% |
+| Ramo | 84,6% | 60% |
+
+```shell
+./gradlew check
+```
+
+O relatório XML do JaCoCo é enviado ao SonarCloud pelo job `sonar` do CI, que roda só quando
+o secret `SONAR_TOKEN` existe.
 
 ## Docker / Lambda
 
