@@ -1,10 +1,12 @@
 package br.com.servicetrack.infrastructure.adapter.usuarios
 
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 
 class VerificacaoDTOSerializacaoTest {
 
@@ -27,5 +29,39 @@ class VerificacaoDTOSerializacaoTest {
 
         assertEquals("9f1c6b40-2d58-4a77-9c31-5e8b0a4d1f22", dto.id)
         assertEquals(setOf("CLIENTE"), dto.roles)
+    }
+
+    @Test
+    fun `requisicao e lida de volta sem perda`() {
+        val requisicao = VerificacaoReqDTO(documento = "52998224725", senha = "servicetrack-demo")
+
+        assertEquals(requisicao, Json.decodeFromString<VerificacaoReqDTO>(Json.encodeToString(requisicao)))
+    }
+
+    @Test
+    fun `requisicao sem senha e recusada na leitura`() {
+        assertThrows<SerializationException> { Json.decodeFromString<VerificacaoReqDTO>("""{"documento":"52998224725"}""") }
+    }
+
+    @Test
+    fun `resposta sem papeis e recusada na leitura`() {
+        val resposta = """
+            {"id":"9f1c6b40-2d58-4a77-9c31-5e8b0a4d1f22","documento":"52998224725","nome":"Joana Ferreira Lima","tipoDeUsuario":"CLIENTE"}
+        """.trimIndent()
+
+        assertThrows<SerializationException> { Json.decodeFromString<VerificacaoResDTO>(resposta) }
+    }
+
+    @Test
+    fun `resposta e escrita com todos os campos`() {
+        val resposta = VerificacaoResDTO(
+            id = "9f1c6b40-2d58-4a77-9c31-5e8b0a4d1f22",
+            documento = "52998224725",
+            nome = "Joana Ferreira Lima",
+            tipoDeUsuario = "CLIENTE",
+            roles = setOf("CLIENTE"),
+        )
+
+        assertEquals(resposta, Json.decodeFromString<VerificacaoResDTO>(Json.encodeToString(resposta)))
     }
 }
